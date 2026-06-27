@@ -22,8 +22,41 @@ classDiagram
         +getPetDetails() String
     }
 
+    class RecurrenceRule {
+        +RecurrenceFrequency frequency
+        +int interval
+        +List~int~ daysOfWeek
+        +Date startDate
+        +occursOn(day Date) bool
+    }
+
+    class CareTask {
+        +String taskId
+        +String petId
+        +TaskType type
+        +int duration
+        +int priority
+        +Time preferredTime
+        +RecurrenceRule recurrence
+        +occursOn(day Date) bool
+        +createEvent(eventId String, day Date) CareEvent
+    }
+
+    class Walk {
+        +float distance
+        +String route
+        +recordDistance(distance float) void
+    }
+
+    class Feeding {
+        +String foodType
+        +String portion
+        +logPortion(portion String) void
+    }
+
     class CareEvent {
         +String eventId
+        +String taskId
         +String petId
         +TaskType type
         +DateTime dateTime
@@ -34,29 +67,35 @@ classDiagram
         +updateStatus(status CareEventStatus) void
     }
 
-    class Walk {
-        +float distance
-        +String route
-        +recordDistance(distance float) void
-    }
-
     class ScheduleManager {
+        -List~CareTask~ tasks
+        -Map~String_Pet~ pets
         -List~CareEvent~ events
-        +generateDailyPlan(date Date, constraints Constraints) DailyPlan
-        +getEventsByType(type TaskType, date Date) List~CareEvent~
-        +getEventsForPet(petId String, date Date) List~CareEvent~
+        +registerPet(pet Pet) void
+        +addTask(task CareTask) void
+        +removeTask(taskId String) void
+        +removePet(petId String) void
+        +getTasksForPet(petId String) List~CareTask~
+        +getTasksByType(type TaskType) List~CareTask~
+        +generateDailyPlan(day Date, constraints Constraints) DailyPlan
+        -dueTasks(day Date) List~CareTask~
+        -prioritize(events List~CareEvent~, constraints Constraints) List~CareEvent~
+        -resolveConflicts(events List~CareEvent~, constraints Constraints) List~CareEvent~
+        -explain(events List~CareEvent~, constraints Constraints) String
     }
 
     class DailyPlan {
         +Date date
         +List~CareEvent~ orderedEvents
         +String rationale
+        +Constraints constraints
+        +float score
         +getSummary() String
     }
 
     class Constraints {
         +int availableMinutes
-        +Map~String_int~ priorityWeights
+        +Map~TaskType_int~ priorityWeights
         +Map~String_String~ ownerPreferences
     }
 
@@ -77,12 +116,24 @@ classDiagram
         MISSED
     }
 
-    Walk --|> CareEvent : is a
+    class RecurrenceFrequency {
+        <<enumeration>>
+        ONCE
+        DAILY
+        WEEKLY
+    }
+
+    Walk --|> CareTask : is a
+    Feeding --|> CareTask : is a
     User "1" o-- "*" Pet : owns
-    Pet "1" --> "*" CareEvent : has scheduled
-    CareEvent "*" --> "1" TaskType : categorized as
+    CareTask "1" *-- "1" RecurrenceRule : repeats by
+    CareTask "*" --> "1" TaskType : categorized as
+    CareTask ..> CareEvent : creates
     CareEvent "*" --> "1" CareEventStatus : has
-    ScheduleManager "1" o-- "*" CareEvent : tracks
+    ScheduleManager "1" o-- "*" CareTask : tracks
+    ScheduleManager "1" o-- "*" Pet : manages
+    ScheduleManager "1" o-- "*" CareEvent : generates
     ScheduleManager ..> Constraints : uses
     ScheduleManager "1" --> "*" DailyPlan : produces
     DailyPlan "1" o-- "*" CareEvent : schedules
+    DailyPlan ..> Constraints : built from

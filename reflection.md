@@ -5,16 +5,26 @@
 **Core Actions**            
                        
 Three core actions include managing multiple pets, adding time availability, and scheduling tasks like walking or feedings.                          
-                    
+
 **a. Initial design**                       
 
-- Briefly describe your initial UML design.
-- What classes did you include, and what responsibilities did you assign to each?
+- Briefly describe your initial UML design.       
+
+The initial design connects User to their pets. It handles everything the pet needs (walks, grooming, meds, feedings), creating a template called CareEvent. All events have basic tracking details for time and priority. ScheduleManager takes the owner's availability limits and builds a DailyPlan to fit their schedule. 
+
+- What classes did you include, and what responsibilities did you assign to each?    
+
+A User Class trackes the owner's profile/information and pets they own. The Pet Class stores the pet's information and keeps track of all tasks scheduled for that pet. The CareEvent Class holds details that tasks share like the time, how long it takes and how important it is, as well as if it's been completed or not. The Walk Class is a special CareEvent and adds specific dog-walking details like route and distance. Constraints Class holds the owner's boundaries/limits such as their availability and preferences. ScheduleManager Class looks at all needed tasks and compares them with owner availibilty and sorts them logically. Daily Plan Class holds the final output, it lists all finalized, ordered tasks and explains why the plan was built that way. 
+
+
 
 **b. Design changes**
 
 - Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+- If yes, describe at least one change and why you made it.        
+
+Yes, the biggest change was splitting a single task into two, CareTask describing recurring care and CareEvent that represents one specific occurrence on a given day. This change was made because the original design used one class for recurring events and individual scheduled task, such as "feed daily" and "this morning's feeding, completed" would have been under one object. Separating kept recurring tasks and daily schedule clean. 
+
 
 ---
 
