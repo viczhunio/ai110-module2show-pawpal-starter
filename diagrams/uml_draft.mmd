@@ -1,0 +1,88 @@
+classDiagram
+    %% PawPal — pet care app domain model
+
+    class User {
+        +String userId
+        +String name
+        +String email
+        -List~Pet~ petList
+        +addPet(pet Pet) void
+        +removePet(petId String) void
+        +getPets() List~Pet~
+    }
+
+    class Pet {
+        +String petId
+        +String name
+        +String species
+        +String breed
+        +int age
+        +String medicalNotes
+        +updateMedical(notes String) void
+        +getPetDetails() String
+    }
+
+    class CareEvent {
+        +String eventId
+        +String petId
+        +TaskType type
+        +DateTime dateTime
+        +int duration
+        +int priority
+        +CareEventStatus status
+        +reschedule(newTime DateTime) void
+        +updateStatus(status CareEventStatus) void
+    }
+
+    class Walk {
+        +float distance
+        +String route
+        +recordDistance(distance float) void
+    }
+
+    class ScheduleManager {
+        -List~CareEvent~ events
+        +generateDailyPlan(date Date, constraints Constraints) DailyPlan
+        +getEventsByType(type TaskType, date Date) List~CareEvent~
+        +getEventsForPet(petId String, date Date) List~CareEvent~
+    }
+
+    class DailyPlan {
+        +Date date
+        +List~CareEvent~ orderedEvents
+        +String rationale
+        +getSummary() String
+    }
+
+    class Constraints {
+        +int availableMinutes
+        +Map~String_int~ priorityWeights
+        +Map~String_String~ ownerPreferences
+    }
+
+    class TaskType {
+        <<enumeration>>
+        WALK
+        FEEDING
+        MEDICATION
+        ENRICHMENT
+        GROOMING
+    }
+
+    class CareEventStatus {
+        <<enumeration>>
+        SCHEDULED
+        COMPLETED
+        CANCELLED
+        MISSED
+    }
+
+    Walk --|> CareEvent : is a
+    User "1" o-- "*" Pet : owns
+    Pet "1" --> "*" CareEvent : has scheduled
+    CareEvent "*" --> "1" TaskType : categorized as
+    CareEvent "*" --> "1" CareEventStatus : has
+    ScheduleManager "1" o-- "*" CareEvent : tracks
+    ScheduleManager ..> Constraints : uses
+    ScheduleManager "1" --> "*" DailyPlan : produces
+    DailyPlan "1" o-- "*" CareEvent : schedules

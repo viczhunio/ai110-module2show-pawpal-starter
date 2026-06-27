@@ -1,8 +1,12 @@
 # PawPal+ Project Reflection
 
-## 1. System Design
+## 1. System Design                       
 
-**a. Initial design**
+**Core Actions**            
+                       
+Three core actions include managing multiple pets, adding time availability, and scheduling tasks like walking or feedings.                          
+                    
+**a. Initial design**                       
 
 - Briefly describe your initial UML design.
 - What classes did you include, and what responsibilities did you assign to each?
