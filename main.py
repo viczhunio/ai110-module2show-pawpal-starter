@@ -4,9 +4,10 @@ Builds a user, pets, and a few care tasks, then generates and prints a
 daily plan so you can see which tasks fit the time budget and why.
 """
 
-from datetime import date, time
+from datetime import date, datetime, time
 
 from pawpal_system import (
+    CareEventStatus,
     CareTask,
     Constraints,
     Feeding,
@@ -72,19 +73,58 @@ def main() -> None:
         recurrence=daily,
     )
 
-    for task in (morning_walk, afternoon_feeding, evening_grooming):
+    # Scheduled at the EXACT same time as Buddy's 08:00 walk, on purpose, to
+    # trigger conflict detection below. Different pet, identical time slot.
+    clashing_feeding = Feeding(
+        task_id="t4",
+        pet_id="p2",
+        type=TaskType.FEEDING,
+        duration=10,
+        priority=4,
+        preferred_time=time(8, 0),
+        recurrence=daily,
+    )
+
+    # Added intentionally OUT OF time order (evening, then morning, then
+    # afternoon) so sort_by_time() has something real to reorder below.
+    for task in (evening_grooming, morning_walk, afternoon_feeding, clashing_feeding):
         manager.add_task(task)
 
-    # --- Show everything that was registered before scheduling -----------
-    print("All Registered Tasks for Today:")
-    for task in manager.tasks:
+    def describe(task: CareTask) -> str:
         pet = manager.pets.get(task.pet_id)
         pet_name = pet.name if pet else task.pet_id
         when = task.preferred_time.strftime("%H:%M") if task.preferred_time else "anytime"
-        print(
-            f"  - [{task.type.value.upper()}] for {pet_name} at {when} "
+        return (
+            f"[{task.type.value.upper()}] for {pet_name} at {when} "
             f"({task.duration} min, Priority: {task.priority})"
         )
+
+    # --- Show tasks in the order they were added (unsorted) --------------
+    print("All Registered Tasks (insertion order):")
+    for task in manager.tasks:
+        print(f"  - {describe(task)}")
+    print()
+
+    # --- Phase 1 demo: sort_by_time() ------------------------------------
+    print("Tasks sorted by time (sort_by_time):")
+    for task in manager.sort_by_time():
+        print(f"  - {describe(task)}")
+    print()
+
+    # --- Phase 1 demo: filter_tasks() by pet -----------------------------
+    print("Wishlist filtered to Buddy (filter_tasks):")
+    for task in manager.filter_tasks(pet_name="Buddy"):
+        print(f"  - {describe(task)}")
+    print()
+
+    # --- Phase 1 demo: detect_conflicts() (warn, don't crash) ------------
+    conflicts = manager.detect_conflicts()
+    if conflicts:
+        print(f"Detected {len(conflicts)} scheduling conflict(s):")
+        for warning in conflicts:
+            print(f"  {warning}")
+    else:
+        print("No scheduling conflicts detected.")
     print()
 
     # --- Constraints & plan ----------------------------------------------
@@ -94,6 +134,40 @@ def main() -> None:
 
     print(plan.get_summary())
     print(f"\nPlan score (fraction of due tasks scheduled): {plan.score:.2f}")
+    print()
+
+    # --- Phase 2 demo: mark_overdue() + filter_events() by status --------
+    # Pretend it's just after 14:00, so anything scheduled earlier is overdue.
+    now = datetime.combine(date.today(), time(14, 0))
+    missed = manager.mark_overdue(now)
+    print(f"mark_overdue(14:00) flipped {len(missed)} task(s) to MISSED.")
+
+    print("\nLive schedule by status (filter_events):")
+    for status in (
+        CareEventStatus.SCHEDULED,
+        CareEventStatus.COMPLETED,
+        CareEventStatus.MISSED,
+    ):
+        events = manager.filter_events(status=status)
+        names = [e.type.value for e in events] or ["(none)"]
+        print(f"  {status.value:>9}: {', '.join(names)}")
+
+    # --- Phase 2 demo: complete_event() auto-creates next occurrence -----
+    # The grooming is a DAILY task still scheduled for today. Completing it
+    # should both mark it done AND spawn tomorrow's instance automatically.
+    print("\nCompleting today's daily grooming...")
+    grooming_id = f"t3@{date.today().isoformat()}"
+    spawned = manager.complete_event(grooming_id)
+    if spawned:
+        print(
+            f"  -> Auto-created next occurrence: {spawned.type.value} on "
+            f"{spawned.date_time.date().isoformat()} at "
+            f"{spawned.date_time.strftime('%H:%M')} (status: {spawned.status.value})"
+        )
+    print(
+        f"  Today was {date.today().isoformat()}; "
+        f"next grooming is exactly one day later."
+    )
 
 
 if __name__ == "__main__":

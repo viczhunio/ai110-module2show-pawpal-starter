@@ -1,5 +1,15 @@
+from datetime import datetime
+
 import streamlit as st
-from pawpal_system import User, Pet, CareTask, ScheduleManager, Constraints, TaskType; 
+from pawpal_system import (
+    CareEventStatus,
+    CareTask,
+    Constraints,
+    Pet,
+    ScheduleManager,
+    TaskType,
+    User,
+)
 
 if "owner" not in st.session_state: 
     st.session_state.owner = User(user_id="u1", name="Alice", email="alice@example.com")
@@ -106,16 +116,49 @@ st.divider()
 st.subheader("Build Schedule")
 st.caption("This button should call your scheduling logic once you implement it.")
 
+available = st.number_input(
+    "Available minutes today", min_value=15, max_value=600, value=60
+)
+
 if st.button("Generate schedule"):
-    st.warning(
-        "Not implemented yet. Next step: create your scheduling logic (classes/functions) and call it here."
-    )
-    st.markdown(
-        """
-Suggested approach:
-1. Design your UML (draft).
-2. Create class stubs (no logic).
-3. Implement scheduling behavior.
-4. Connect your scheduler here and display results.
-"""
-    )
+    now = datetime.now()
+
+    # Phase 2: turn the task wishlist into a timed, conflict-resolved plan.
+    constraints = Constraints(available_minutes=int(available))
+    plan = manager.generate_daily_plan(now.date(), constraints)
+
+    # Any scheduled event whose window has already passed is now MISSED.
+    missed = manager.mark_overdue(now)
+
+    st.text(plan.get_summary())
+    st.caption(f"Plan score (fraction of due tasks scheduled): {plan.score:.2f}")
+
+    if missed:
+        st.warning(
+            f"{len(missed)} task(s) were already overdue and marked MISSED."
+        )
+
+    # Live-schedule status breakdown, powered by filter_events().
+    st.markdown("### Today's status")
+    labels = {
+        CareEventStatus.SCHEDULED: "⏳ Pending",
+        CareEventStatus.COMPLETED: "✅ Completed",
+        CareEventStatus.MISSED: "❌ Missed",
+        CareEventStatus.CANCELLED: "🚫 Cancelled",
+    }
+    rows = []
+    for status, label in labels.items():
+        for event in manager.filter_events(status=status):
+            pet = manager.pets.get(event.pet_id)
+            rows.append(
+                {
+                    "Status": label,
+                    "Pet": pet.name if pet else event.pet_id,
+                    "Task": event.type.value,
+                    "Time": event.date_time.strftime("%H:%M"),
+                }
+            )
+    if rows:
+        st.table(rows)
+    else:
+        st.info("No tasks were due today.")

@@ -102,6 +102,42 @@ class RecurrenceRule:
             return day.weekday() in self.days_of_week
         return False
 
+    def next_date(self, after: date) -> date | None:
+        """Return the next date this rule fires strictly after `after`.
+
+        Uses timedelta so date math is calendar-accurate (it rolls over month
+        and year boundaries for us). Returns None for ONCE rules, which never
+        repeat.
+
+        Algorithm:
+            - DAILY: O(1) jump of `after + timedelta(days=interval)`.
+            - WEEKLY with specific weekdays: scan the next 7 days and return
+              the first whose weekday() is configured — O(7), i.e. constant.
+            - WEEKLY without weekdays: O(1) jump of `timedelta(weeks=interval)`.
+            - ONCE: returns None.
+
+        Args:
+            after: The reference date; the result is strictly later than this.
+
+        Returns:
+            The next firing date, or None if the rule never repeats.
+        """
+        if self.frequency == RecurrenceFrequency.DAILY:
+            # "Daily" -> next due date is today + interval days (interval=1 by default).
+            return after + timedelta(days=self.interval)
+
+        if self.frequency == RecurrenceFrequency.WEEKLY:
+            # If specific weekdays are set, find the next one within the coming week;
+            # otherwise fall back to a plain "every N weeks" jump.
+            if self.days_of_week:
+                for offset in range(1, 8):
+                    candidate = after + timedelta(days=offset)
+                    if candidate.weekday() in self.days_of_week:
+                        return candidate
+            return after + timedelta(weeks=self.interval)
+
+        return None  # ONCE: no next occurrence
+
 
 # ---------------------------------------------------------------------------
 # Care tasks (recurring templates)
@@ -253,6 +289,11 @@ class ScheduleManager:
         self.events = [event for event in self.events if event.pet_id != pet_id]
 
     # --- queries ----------------------------------------------------------
+    def _pet_name(self, pet_id: str) -> str:
+        """Resolve a pet id to its display name, falling back to the id."""
+        pet = self.pets.get(pet_id)
+        return pet.name if pet else pet_id
+
     def get_tasks_for_pet(self, pet_id: str) -> list[CareTask]:
         """Return all tasks belonging to the given pet."""
         return [task for task in self.tasks if task.pet_id == pet_id]
@@ -260,6 +301,210 @@ class ScheduleManager:
     def get_tasks_by_type(self, type: TaskType) -> list[CareTask]:
         """Return all tasks of the given type."""
         return [task for task in self.tasks if task.type == type]
+
+    def filter_tasks(self, pet_name: str | None = None) -> list[CareTask]:
+        """Phase 1 (wishlist) filter: return tasks for the named pet.
+
+        Tasks carry no status — only their generated CareEvents do — so the
+        wishlist can only be filtered by pet. Name is matched
+        case-insensitively against the pet registry. Omit pet_name to return
+        all tasks (a copy, so callers can't mutate the internal list).
+        """
+        if pet_name is None:
+            return list(self.tasks)
+
+        wanted_ids = {
+            pet_id
+            for pet_id, pet in self.pets.items()
+            if pet.name.lower() == pet_name.lower()
+        }
+        return [task for task in self.tasks if task.pet_id in wanted_ids]
+
+    def sort_by_time(self) -> list[CareTask]:
+        """Return tasks ordered by preferred_time, earliest first.
+
+        Uses a lambda as the sort key that builds an "HH:MM" string for
+        each task; strftime always zero-pads the hour, so lexicographic
+        string order matches chronological order. Tasks with no
+        preferred_time ("anytime") sort to the end.
+
+        Algorithm:
+            Single O(n log n) sort with a composite key
+            (preferred_time is None, "HH:MM"). The leading bool sorts timed
+            tasks (False) ahead of anytime tasks (True), so a None time is
+            never compared against a real string. Non-mutating: returns a new
+            list and leaves self.tasks untouched.
+
+        Returns:
+            A new list of tasks in ascending time order, anytime tasks last.
+        """
+        return sorted(
+            self.tasks,
+            key=lambda task: (
+                task.preferred_time is None,
+                task.preferred_time.strftime("%H:%M") if task.preferred_time else "",
+            ),
+        )
+
+    def filter_events(
+        self,
+        status: CareEventStatus | None = None,
+        pet_name: str | None = None,
+    ) -> list[CareEvent]:
+        """Return events matching the given status and/or pet name.
+
+        Status lives on CareEvents (not CareTasks), so completion filtering
+        works here. Both filters are optional and combined with AND: omit an
+        argument to ignore it, pass both to narrow further. Pet name is matched
+        case-insensitively against the pet registry.
+        """
+        wanted_ids = None
+        if pet_name is not None:
+            wanted_ids = {
+                pet_id
+                for pet_id, pet in self.pets.items()
+                if pet.name.lower() == pet_name.lower()
+            }
+
+        return [
+            event
+            for event in self.events
+            if (status is None or event.status == status)
+            and (wanted_ids is None or event.pet_id in wanted_ids)
+        ]
+
+    def mark_overdue(self, now: datetime) -> list[CareEvent]:
+        """Phase 2 (live schedule): flip still-scheduled past events to MISSED.
+
+        Gives the MISSED status real data: any event still SCHEDULED whose end
+        time (start + duration) is before `now` is treated as missed. Completed
+        and cancelled events are left untouched. Returns the events changed so
+        the caller can react (e.g. notify the owner).
+
+        Algorithm:
+            Single O(n) pass over self.events. Each event's end is computed as
+            date_time + timedelta(minutes=duration) and compared to `now`;
+            only SCHEDULED events can transition, so completed/cancelled/
+            already-missed events are skipped.
+
+        Args:
+            now: The current moment; events ending before this are overdue.
+
+        Returns:
+            The list of events whose status was flipped to MISSED (possibly
+            empty), in their original order within self.events.
+        """
+        missed: list[CareEvent] = []
+        for event in self.events:
+            if event.status != CareEventStatus.SCHEDULED:
+                continue
+            event_end = event.date_time + timedelta(minutes=event.duration)
+            if event_end < now:
+                event.update_status(CareEventStatus.MISSED)
+                missed.append(event)
+        return missed
+
+    def complete_event(self, event_id: str) -> CareEvent | None:
+        """Mark an event COMPLETED and auto-create its next occurrence.
+
+        When a recurring task's event is finished, the next instance should be
+        waiting. So we look up the originating task, ask its recurrence for the
+        next date, and build a fresh CareEvent for that day. Returns the new
+        event, or None when nothing was spawned: the event/task wasn't found,
+        the task is one-time (ONCE), or that next occurrence already exists
+        (so completing twice can't create duplicates).
+
+        Algorithm:
+            1. O(n) linear scan to find the event by id; mark it COMPLETED.
+            2. O(m) linear scan to find its originating task by task_id.
+            3. Delegate to RecurrenceRule.next_date to compute the next day.
+            4. O(n) duplicate guard on the would-be event id before appending,
+               which makes repeated completions idempotent.
+            Overall O(n + m) where n = events, m = tasks.
+
+        Args:
+            event_id: Id of the event to complete.
+
+        Returns:
+            The newly created CareEvent for the next occurrence, or None when
+            nothing was spawned (not found, one-time task, or duplicate).
+        """
+        event = next((e for e in self.events if e.event_id == event_id), None)
+        if event is None:
+            return None
+        event.update_status(CareEventStatus.COMPLETED)
+
+        task = next((t for t in self.tasks if t.task_id == event.task_id), None)
+        if task is None:
+            return None  # orphaned event (task was removed); nothing to repeat
+
+        next_day = task.recurrence.next_date(event.date_time.date())
+        if next_day is None:
+            return None  # one-time task: nothing to repeat
+
+        next_id = f"{task.task_id}@{next_day.isoformat()}"
+        if any(e.event_id == next_id for e in self.events):
+            return None  # next occurrence already scheduled; stay idempotent
+
+        next_event = task.create_event(next_id, next_day)
+        self.events.append(next_event)
+        return next_event
+
+    def detect_conflicts(self) -> list[str]:
+        """Return warning messages for tasks whose time windows overlap.
+
+        Lightweight, non-fatal check meant to *warn*, not stop the program:
+        it compares each task's [preferred_time, preferred_time + duration)
+        window against the others and returns one human-readable warning per
+        overlapping pair — flagging whether it's the same pet or different
+        pets. Tasks with no preferred_time ("anytime") can't clash on the
+        clock and are skipped. Returns an empty list when nothing conflicts,
+        so callers can simply check `if warnings:` instead of catching errors.
+
+        Algorithm:
+            Sort timed tasks by start minute (O(n log n)), then for each task
+            scan forward only while later tasks could still overlap, breaking
+            as soon as one starts at/after the current task's end. This makes
+            the comparison phase output-sensitive: near-linear when few tasks
+            overlap, O(n^2) only when many genuinely do (the cost of reporting
+            every conflicting pair). Two tasks overlap when one starts before
+            the other ends.
+
+        Returns:
+            A list of human-readable warning strings, one per overlapping
+            pair; empty if there are no conflicts.
+        """
+
+        def minutes_of_day(t: time) -> int:
+            return t.hour * 60 + t.minute
+
+        timed = sorted(
+            (task for task in self.tasks if task.preferred_time is not None),
+            key=lambda task: minutes_of_day(task.preferred_time),
+        )
+
+        warnings: list[str] = []
+        for index, task in enumerate(timed):
+            start = minutes_of_day(task.preferred_time)
+            end = start + task.duration
+            for other in timed[index + 1 :]:
+                other_start = minutes_of_day(other.preferred_time)
+                if other_start >= end:
+                    break  # sorted by start: nothing later can overlap `task`
+
+                scope = (
+                    "same pet"
+                    if task.pet_id == other.pet_id
+                    else "different pets"
+                )
+                warnings.append(
+                    f"[CONFLICT] ({scope}) {task.type.value} for "
+                    f"{self._pet_name(task.pet_id)} at "
+                    f"{task.preferred_time.strftime('%H:%M')} overlaps "
+                    f"{other.type.value} for {self._pet_name(other.pet_id)} at "
+                    f"{other.preferred_time.strftime('%H:%M')}."
+                )
+        return warnings
 
     # --- planning ---------------------------------------------------------
     def generate_daily_plan(self, day: date, constraints: Constraints) -> DailyPlan:

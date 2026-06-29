@@ -86,14 +86,63 @@ Sample test output:
 
 ## 📐 Smarter Scheduling
 
-> Fill in once you've implemented scheduling logic.
+Beyond the basic daily plan, PawPal+ implements four "smarter scheduling"
+behaviors. All of them live on `ScheduleManager` (and `RecurrenceRule`) in
+`pawpal_system.py`.
 
 | Feature | Method(s) | Notes |
 |---------|-----------|-------|
-| Task sorting | | e.g., by priority, duration |
-| Filtering | | e.g., skip tasks if time runs out |
-| Conflict handling | | e.g., overlapping time slots |
-| Recurring tasks | | e.g., daily vs. weekly |
+| Sorting | `ScheduleManager.sort_by_time()` | Orders the task wishlist by time of day, earliest first; "anytime" tasks last |
+| Filtering | `ScheduleManager.filter_tasks()`, `ScheduleManager.filter_events()` | Filter the wishlist by pet, and the live schedule by pet and/or completion status |
+| Conflict detection | `ScheduleManager.detect_conflicts()` | Non-fatal warnings for overlapping time windows (same pet or different pets) |
+| Recurring tasks | `RecurrenceRule.next_date()`, `ScheduleManager.complete_event()` | Completing a daily/weekly task auto-creates the next occurrence |
+
+### Sorting behavior — `sort_by_time()`
+
+Returns a new list of tasks ordered by `preferred_time`, earliest first. The
+sort key is a lambda that builds a zero-padded `"HH:MM"` string, so
+lexicographic order matches chronological order. Tasks with no `preferred_time`
+("anytime") are pushed to the end via a composite `(is_none, "HH:MM")` key, and
+the method is non-mutating — `self.tasks` is left untouched.
+
+### Filtering behavior — `filter_tasks()` and `filter_events()`
+
+Filtering is split across the two project phases:
+
+- **Wishlist (before scheduling):** `filter_tasks(pet_name=...)` returns the
+  `CareTask`s for a given pet (case-insensitive name match). Tasks carry no
+  status, so the wishlist can only be filtered by pet.
+- **Live schedule (after scheduling):** `filter_events(status=..., pet_name=...)`
+  filters the generated `CareEvent`s by **completion status**
+  (`SCHEDULED`/`COMPLETED`/`MISSED`/`CANCELLED`) and/or pet. Both arguments are
+  optional and combined with AND, so `filter_events(status=COMPLETED)` answers
+  "what's done?" and `filter_events(status=SCHEDULED)` answers "what's still
+  pending?".
+
+Supporting method: `mark_overdue(now)` flips still-`SCHEDULED` past events to
+`MISSED`, so the status filter has real data to find.
+
+### Conflict detection logic — `detect_conflicts()`
+
+Scans the task wishlist and returns a list of human-readable warning strings —
+one per overlapping pair — flagging whether the clash is for the **same pet** or
+**different pets**. Two tasks conflict when one starts before the other ends
+(comparing `[preferred_time, preferred_time + duration)` windows). It is
+deliberately **non-fatal**: it returns warnings rather than raising, so callers
+just check `if warnings:`. An empty list means no conflicts. Tasks with no
+`preferred_time` can't clash on the clock and are skipped.
+
+### Recurring task logic — `next_date()` and `complete_event()`
+
+- `RecurrenceRule.next_date(after)` computes the next firing date using
+  `timedelta` for calendar-accurate math (it rolls over month/year boundaries):
+  **daily** → `after + timedelta(days=interval)` (i.e. today + 1 day by
+  default), **weekly** → the next configured weekday (or `timedelta(weeks=interval)`),
+  **once** → `None`.
+- `ScheduleManager.complete_event(event_id)` marks an event `COMPLETED` and, if
+  its task recurs, automatically creates a fresh `CareEvent` for the next
+  occurrence. It is idempotent — completing the same event twice won't create a
+  duplicate, and one-time (`ONCE`) tasks spawn nothing.
 
 ## 📸 Demo Walkthrough
 
