@@ -1,5 +1,12 @@
 import streamlit as st
+from pawpal_system import User, Pet, CareTask, ScheduleManager, Constraints, TaskType; 
 
+if "owner" not in st.session_state: 
+    st.session_state.owner = User(user_id="u1", name="Alice", email="alice@example.com")
+    st.session_state.manager = ScheduleManager()
+
+owner = st.session_state.owner
+manager = st.session_state.manager
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
 st.title("🐾 PawPal+")
@@ -58,9 +65,35 @@ with col3:
     priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
 
 if st.button("Add task"):
+    if pet_name not in st.session_state.manager.pets:
+        new_pet = Pet(
+            pet_id=pet_name.lower(),
+            name=pet_name, 
+            species=species, 
+            breed="Unknown", 
+            age=1
+        )
+        st.session_state.manager.register_pet(new_pet)
+
+    next_id = f"task_{len(st.session_state.manager.tasks) + 1}"
+
+    priority_map = {"low": 1, "medium": 2, "high": 3}
+    numeric_priority = priority_map.get(priority, 1) 
+
+    new_task = CareTask(
+        task_id=next_id, 
+        pet_id=pet_name.lower(), 
+        type=TaskType.WALK, #default for now 
+        duration=int(duration), 
+        priority=numeric_priority
+    )
+
+    st.session_state.manager.add_task(new_task)
     st.session_state.tasks.append(
         {"title": task_title, "duration_minutes": int(duration), "priority": priority}
     )
+
+    st.success(f"Successfully registered task '{task_title}' for {pet_name} in ScheduleManager!")
 
 if st.session_state.tasks:
     st.write("Current tasks:")
