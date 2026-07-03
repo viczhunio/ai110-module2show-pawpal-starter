@@ -62,8 +62,9 @@ I used AI to understand the code before making changes and to help with structur
 
 - Describe one moment where you did not accept an AI suggestion as-is.
 - How did you evaluate or verify what the AI suggested?      
-              
+
 One suggestion I did not accept was when I was asking the AI to help plan my outline for testing my pawpal_system.py, it suggested a very complex, multi-page suite. It included very long and detailed explanations. I evaluated the response and did not want the README.md file to be overly dense and informal for readers. 
+
 ---
 
 ## 4. Testing and Verification
