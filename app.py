@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 
 import streamlit as st
 from pawpal_system import (
@@ -10,6 +10,10 @@ from pawpal_system import (
     TaskType,
     User,
 )
+
+# Human-readable priority labels <-> the numeric priority the scheduler ranks by.
+PRIORITY_TO_NUM = {"low": 1, "medium": 2, "high": 3}
+NUM_TO_PRIORITY = {num: label.title() for label, num in PRIORITY_TO_NUM.items()}
 
 if "owner" not in st.session_state: 
     st.session_state.owner = User(user_id="u1", name="Alice", email="alice@example.com")
@@ -63,51 +67,86 @@ species = st.selectbox("Species", ["dog", "cat", "other"])
 st.markdown("### Tasks")
 st.caption("Add a few tasks. In your final version, these should feed into your scheduler.")
 
-if "tasks" not in st.session_state:
-    st.session_state.tasks = []
-
 col1, col2, col3 = st.columns(3)
 with col1:
-    task_title = st.text_input("Task title", value="Morning walk")
+    task_type = st.selectbox(
+        "Task type", [t.value for t in TaskType], format_func=str.title
+    )
 with col2:
     duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20)
 with col3:
     priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
 
+preferred_time = st.time_input("Preferred time", value=time(8, 0))
+
 if st.button("Add task"):
     if pet_name not in st.session_state.manager.pets:
         new_pet = Pet(
             pet_id=pet_name.lower(),
-            name=pet_name, 
-            species=species, 
-            breed="Unknown", 
+            name=pet_name,
+            species=species,
+            breed="Unknown",
             age=1
         )
         st.session_state.manager.register_pet(new_pet)
 
     next_id = f"task_{len(st.session_state.manager.tasks) + 1}"
 
-    priority_map = {"low": 1, "medium": 2, "high": 3}
-    numeric_priority = priority_map.get(priority, 1) 
+    numeric_priority = PRIORITY_TO_NUM.get(priority, 1)
 
     new_task = CareTask(
-        task_id=next_id, 
-        pet_id=pet_name.lower(), 
-        type=TaskType.WALK, #default for now 
-        duration=int(duration), 
-        priority=numeric_priority
+        task_id=next_id,
+        pet_id=pet_name.lower(),
+        type=TaskType(task_type),
+        duration=int(duration),
+        priority=numeric_priority,
+        preferred_time=preferred_time,
     )
 
     st.session_state.manager.add_task(new_task)
-    st.session_state.tasks.append(
-        {"title": task_title, "duration_minutes": int(duration), "priority": priority}
+
+    st.success(
+        f"Successfully registered {task_type} for {pet_name} at "
+        f"{preferred_time.strftime('%H:%M')} in ScheduleManager!"
     )
 
-    st.success(f"Successfully registered task '{task_title}' for {pet_name} in ScheduleManager!")
+# --- Wishlist, sorted chronologically by the scheduler -----------------------
+if manager.tasks:
+    st.write("**Current tasks** (sorted by time of day):")
+    sorted_tasks = manager.sort_by_time()  # ScheduleManager.sort_by_time()
+    rows = [
+        {
+            "Time": task.preferred_time.strftime("%H:%M")
+            if task.preferred_time
+            else "Anytime",
+            "Pet": manager.pets[task.pet_id].name
+            if task.pet_id in manager.pets
+            else task.pet_id,
+            "Task": task.type.value.title(),
+            "Duration": f"{task.duration} min",
+            "Priority": NUM_TO_PRIORITY.get(task.priority, str(task.priority)),
+        }
+        for task in sorted_tasks
+    ]
+    st.table(rows)
 
-if st.session_state.tasks:
-    st.write("Current tasks:")
-    st.table(st.session_state.tasks)
+    # --- Conflict detection ---------------------------------------------------
+    conflicts = manager.detect_conflicts()  # ScheduleManager.detect_conflicts()
+    if conflicts:
+        st.warning(
+            f"⚠️ {len(conflicts)} scheduling conflict(s) found — "
+            "these tasks want overlapping time slots:"
+        )
+        for message in conflicts:
+            # Drop the internal "[CONFLICT] " tag for a pet-owner-friendly read.
+            st.markdown(f"- {message.replace('[CONFLICT] ', '')}")
+        st.caption(
+            "💡 Tip: *same pet* overlaps can't happen at once — reschedule one. "
+            "*Different pets* may be fine if you can care for both together, "
+            "otherwise stagger their times."
+        )
+    else:
+        st.success("✅ No time conflicts — every task has a clear slot.")
 else:
     st.info("No tasks yet. Add one above.")
 

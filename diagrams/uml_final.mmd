@@ -1,0 +1,149 @@
+classDiagram
+    %% PawPal+ — pet care app domain model (final, as-built)
+
+    class User {
+        +String userId
+        +String name
+        +String email
+        -List~Pet~ petList
+        +addPet(pet Pet) void
+        +removePet(petId String) void
+        +getPets() List~Pet~
+    }
+
+    class Pet {
+        +String petId
+        +String name
+        +String species
+        +String breed
+        +int age
+        +String medicalNotes
+        +updateMedical(notes String) void
+        +getPetDetails() String
+    }
+
+    class RecurrenceRule {
+        +RecurrenceFrequency frequency
+        +int interval
+        +List~int~ daysOfWeek
+        +Date startDate
+        +occursOn(day Date) bool
+        +nextDate(after Date) Date
+    }
+
+    class CareTask {
+        +String taskId
+        +String petId
+        +TaskType type
+        +int duration
+        +int priority
+        +Time preferredTime
+        +RecurrenceRule recurrence
+        +occursOn(day Date) bool
+        +createEvent(eventId String, day Date) CareEvent
+    }
+
+    class Walk {
+        +float distance
+        +String route
+        +recordDistance(distance float) void
+    }
+
+    class Feeding {
+        +String foodType
+        +String portion
+        +logPortion(portion String) void
+    }
+
+    class CareEvent {
+        +String eventId
+        +String taskId
+        +String petId
+        +TaskType type
+        +DateTime dateTime
+        +int duration
+        +int priority
+        +CareEventStatus status
+        +reschedule(newTime DateTime) void
+        +updateStatus(status CareEventStatus) void
+    }
+
+    class ScheduleManager {
+        -List~CareTask~ tasks
+        -Map~String_Pet~ pets
+        -List~CareEvent~ events
+        +registerPet(pet Pet) void
+        +addTask(task CareTask) void
+        +removeTask(taskId String) void
+        +removePet(petId String) void
+        +getTasksForPet(petId String) List~CareTask~
+        +getTasksByType(type TaskType) List~CareTask~
+        +filterTasks(petName String) List~CareTask~
+        +sortByTime() List~CareTask~
+        +filterEvents(status CareEventStatus, petName String) List~CareEvent~
+        +detectConflicts() List~String~
+        +markOverdue(now DateTime) List~CareEvent~
+        +completeEvent(eventId String) CareEvent
+        +generateDailyPlan(day Date, constraints Constraints) DailyPlan
+        -petName(petId String) String
+        -dueTasks(day Date) List~CareTask~
+        -prioritize(events List~CareEvent~, constraints Constraints) List~CareEvent~
+        -resolveConflicts(events List~CareEvent~, constraints Constraints) List~CareEvent~
+        -explain(events List~CareEvent~, constraints Constraints) String
+    }
+
+    class DailyPlan {
+        +Date date
+        +List~CareEvent~ orderedEvents
+        +String rationale
+        +Constraints constraints
+        +float score
+        +getSummary() String
+    }
+
+    class Constraints {
+        +int availableMinutes
+        +Map~TaskType_int~ priorityWeights
+        +Map~String_String~ ownerPreferences
+    }
+
+    class TaskType {
+        <<enumeration>>
+        WALK
+        FEEDING
+        MEDICATION
+        ENRICHMENT
+        GROOMING
+    }
+
+    class CareEventStatus {
+        <<enumeration>>
+        SCHEDULED
+        COMPLETED
+        CANCELLED
+        MISSED
+    }
+
+    class RecurrenceFrequency {
+        <<enumeration>>
+        ONCE
+        DAILY
+        WEEKLY
+    }
+
+    Walk --|> CareTask : is a
+    Feeding --|> CareTask : is a
+    User "1" o-- "*" Pet : owns
+    CareTask "1" *-- "1" RecurrenceRule : repeats by
+    CareTask "*" --> "1" TaskType : categorized as
+    CareTask ..> CareEvent : creates
+    RecurrenceRule "*" --> "1" RecurrenceFrequency : has
+    CareEvent "*" --> "1" CareEventStatus : has
+    ScheduleManager "1" o-- "*" CareTask : tracks
+    ScheduleManager "1" o-- "*" Pet : manages
+    ScheduleManager "1" o-- "*" CareEvent : generates
+    ScheduleManager ..> RecurrenceRule : reads next_date on complete
+    ScheduleManager ..> Constraints : uses
+    ScheduleManager "1" --> "*" DailyPlan : produces
+    DailyPlan "1" o-- "*" CareEvent : schedules
+    DailyPlan ..> Constraints : built from
