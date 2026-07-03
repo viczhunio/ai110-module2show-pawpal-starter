@@ -45,7 +45,7 @@ The scheduler considers calendar dates, available time, task importance, and use
        
 One tradeoff the scheduler makes is that inside _resolve_conflicts, instead of computing every mathematical combination to maximize total daily minute utilization, the algorithm ranks the active tasks by their score. It processes the score sequentially and then discards any event that causes a time-window overlap with a previously accepted task or pushes the total schedule over the owner's daily time limit.      
           
-This tradeoff is reasonable because it prioritizes computational efficiency and system predictability over theoretical precision. This makes the pet care app speedy and helpful over prioritizing perfect math. Running the optimization routine usees O(N log N) sorting time which prevents excessive battery drain and scaling to multi-pet households. If the scheduler used a complex mathematical solver to rearrange the day, it would make it harder for the app to display a single written note explainin the choices it made for the daily plan.    
+This tradeoff is reasonable because it prioritizes computational efficiency and system predictability over theoretical precision. This makes the pet care app speedy and helpful over prioritizing perfect math. Running the optimization routine usees O(N log N) sorting time which prevents excessive battery drain and scaling to multi-pet households. If the scheduler used a complex mathematical solver to rearrange the day, it would make it harder for the app to display a single written note explaining the choices it made for the daily plan.    
                  
 ---
 

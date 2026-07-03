@@ -81,8 +81,23 @@ pytest --cov
 Sample test output:
 
 ```
-# Paste your pytest output here
-```
+=================================================== test session starts ====================================================
+platform win32 -- Python 3.14.5, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\victo\Downloads\AI110-Codepath\pawpal-starter
+collected 10 items                                                                                                           
+
+tests\test_pawpal.py ..                                                                                               [ 20%]
+tests\test_schedule_manager.py ........                                                                                [100%]
+
+==================================================== 10 passed in 0.06s ====================================================
+```       
+### Test Coverage Summary       
+The test suite verifies the core backend behaviors of the pet scheduler application across both happy paths and tricky edge cases. Specifically, it validates that active tasks are successfully sorted into their chronological or strict priority order, ensures recurring tasks accurately transition and handle calculation logic across day changes, and checks that the system properly flags time budget or overlapping event constraints. It also confirms stable and robust performance under boundary conditions, such as when processing empty profiles or matching identical task schedules.           
+
+### Confidence Level
+⭐ ⭐ ⭐ ⭐ ⭐ (5/5 Stars)      
+**Rationale:** The system successfully passed all 10 unit tests focusing on robust priority routing, time conflict detection, and complex edge cases without a single failure or regression. 
+
 
 ## 📐 Smarter Scheduling
 
