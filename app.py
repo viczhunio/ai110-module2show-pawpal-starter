@@ -6,6 +6,8 @@ from pawpal_system import (
     CareTask,
     Constraints,
     Pet,
+    RecurrenceFrequency,
+    RecurrenceRule,
     ScheduleManager,
     TaskType,
     User,
@@ -14,6 +16,18 @@ from pawpal_system import (
 # Human-readable priority labels <-> the numeric priority the scheduler ranks by.
 PRIORITY_TO_NUM = {"low": 1, "medium": 2, "high": 3}
 NUM_TO_PRIORITY = {num: label.title() for label, num in PRIORITY_TO_NUM.items()}
+
+# Weekday index (0=Mon .. 6=Sun) <-> short label, for WEEKLY recurrence pickers.
+WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def describe_recurrence(task: CareTask) -> str:
+    """Human-readable summary of a task's recurrence for the wishlist table."""
+    frequency = task.recurrence.frequency
+    if frequency == RecurrenceFrequency.WEEKLY and task.recurrence.days_of_week:
+        days = ", ".join(WEEKDAY_NAMES[d] for d in sorted(task.recurrence.days_of_week))
+        return f"Weekly ({days})"
+    return frequency.value.title()
 
 if "owner" not in st.session_state: 
     st.session_state.owner = User(user_id="u1", name="Alice", email="alice@example.com")
@@ -77,7 +91,24 @@ with col2:
 with col3:
     priority = st.selectbox("Priority", ["low", "medium", "high"], index=2)
 
-preferred_time = st.time_input("Preferred time", value=time(8, 0))
+col4, col5 = st.columns(2)
+with col4:
+    preferred_time = st.time_input("Preferred time", value=time(8, 0))
+with col5:
+    frequency = st.selectbox(
+        "Repeat", [f.value for f in RecurrenceFrequency], format_func=str.title
+    )
+
+# Weekly tasks need to know which weekdays they fire on. Default to today's
+# weekday so a freshly added weekly task still appears in today's plan.
+weekdays: list[int] = []
+if frequency == RecurrenceFrequency.WEEKLY.value:
+    selected_days = st.multiselect(
+        "On which days?",
+        WEEKDAY_NAMES,
+        default=[WEEKDAY_NAMES[datetime.now().weekday()]],
+    )
+    weekdays = [WEEKDAY_NAMES.index(day) for day in selected_days]
 
 if st.button("Add task"):
     if pet_name not in st.session_state.manager.pets:
@@ -94,6 +125,11 @@ if st.button("Add task"):
 
     numeric_priority = PRIORITY_TO_NUM.get(priority, 1)
 
+    recurrence = RecurrenceRule(
+        frequency=RecurrenceFrequency(frequency),
+        days_of_week=weekdays,
+    )
+
     new_task = CareTask(
         task_id=next_id,
         pet_id=pet_name.lower(),
@@ -101,12 +137,13 @@ if st.button("Add task"):
         duration=int(duration),
         priority=numeric_priority,
         preferred_time=preferred_time,
+        recurrence=recurrence,
     )
 
     st.session_state.manager.add_task(new_task)
 
     st.success(
-        f"Successfully registered {task_type} for {pet_name} at "
+        f"Successfully registered {frequency} {task_type} for {pet_name} at "
         f"{preferred_time.strftime('%H:%M')} in ScheduleManager!"
     )
 
@@ -125,6 +162,7 @@ if manager.tasks:
             "Task": task.type.value.title(),
             "Duration": f"{task.duration} min",
             "Priority": NUM_TO_PRIORITY.get(task.priority, str(task.priority)),
+            "Repeats": describe_recurrence(task),
         }
         for task in sorted_tasks
     ]
@@ -160,24 +198,66 @@ available = st.number_input(
 )
 
 if st.button("Generate schedule"):
-    now = datetime.now()
-
     # Phase 2: turn the task wishlist into a timed, conflict-resolved plan.
     constraints = Constraints(available_minutes=int(available))
-    plan = manager.generate_daily_plan(now.date(), constraints)
+    plan = manager.generate_daily_plan(datetime.now().date(), constraints)
 
-    # Any scheduled event whose window has already passed is now MISSED.
-    missed = manager.mark_overdue(now)
+    # Stash the results so the status/completion UI below can re-render on every
+    # rerun (Streamlit reruns the whole script whenever any button is clicked,
+    # so this block only runs on the click itself).
+    st.session_state.plan_summary = plan.get_summary()
+    st.session_state.plan_score = plan.score
+    st.session_state.schedule_generated = True
 
-    st.text(plan.get_summary())
-    st.caption(f"Plan score (fraction of due tasks scheduled): {plan.score:.2f}")
+# --- Live schedule: completion, overdue, and status breakdown ----------------
+# Rendered on every run (not just the "Generate schedule" click) so the
+# "Mark as done" button below can update the table after its own rerun.
+if st.session_state.get("schedule_generated"):
+    st.text(st.session_state.plan_summary)
+    st.caption(
+        f"Plan score (fraction of due tasks scheduled): "
+        f"{st.session_state.plan_score:.2f}"
+    )
 
-    if missed:
-        st.warning(
-            f"{len(missed)} task(s) were already overdue and marked MISSED."
-        )
+    # --- Mark a task done -----------------------------------------------------
+    # complete_event() flips the event to COMPLETED and, for recurring tasks,
+    # auto-creates the next occurrence — so completing a daily task makes
+    # tomorrow's instance appear in the table below.
+    pending = manager.filter_events(status=CareEventStatus.SCHEDULED)
+    if pending:
+        st.markdown("### ✅ Mark a task done")
+        labels_to_id = {
+            f"{manager.pets[e.pet_id].name if e.pet_id in manager.pets else e.pet_id}"
+            f" — {e.type.value.title()} at {e.date_time.strftime('%a %H:%M')}": e.event_id
+            for e in pending
+        }
+        choice = st.selectbox("Which task did you complete?", list(labels_to_id))
+        if st.button("Mark as done"):
+            spawned = manager.complete_event(labels_to_id[choice])
+            if spawned:
+                st.success(
+                    f"Done! Next occurrence auto-scheduled for "
+                    f"{spawned.date_time.strftime('%A %b %d')} at "
+                    f"{spawned.date_time.strftime('%H:%M')}."
+                )
+            else:
+                st.success("Marked complete. (One-time task — nothing to repeat.)")
+            st.rerun()
 
-    # Live-schedule status breakdown, powered by filter_events().
+    # --- Mark overdue tasks as missed -----------------------------------------
+    st.markdown("### ⏰ Update overdue tasks")
+    st.caption(
+        "Flip any still-pending task whose time has already passed to MISSED."
+    )
+    if st.button("Mark overdue as missed"):
+        missed = manager.mark_overdue(datetime.now())
+        if missed:
+            st.warning(f"{len(missed)} task(s) were overdue and marked MISSED.")
+        else:
+            st.info("No overdue tasks — everything is still on time.")
+        st.rerun()
+
+    # --- Live status breakdown, powered by filter_events() --------------------
     st.markdown("### Today's status")
     labels = {
         CareEventStatus.SCHEDULED: "⏳ Pending",
@@ -193,8 +273,8 @@ if st.button("Generate schedule"):
                 {
                     "Status": label,
                     "Pet": pet.name if pet else event.pet_id,
-                    "Task": event.type.value,
-                    "Time": event.date_time.strftime("%H:%M"),
+                    "Task": event.type.value.title(),
+                    "When": event.date_time.strftime("%a %H:%M"),
                 }
             )
     if rows:

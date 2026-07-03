@@ -54,13 +54,16 @@ This tradeoff is reasonable because it prioritizes computational efficiency and 
 **a. How you used AI**
 
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+- What kinds of prompts or questions were most helpful?       
+           
+I used AI to understand the code before making changes and to help with structural cleanup. I also used it to debug and test edge cases or find possible edge cases. The kinds of prompts and questions that were most helpful included those that were specific. Direct instructions like asking the AI to keep certain parts and focus on others, made it more helpful since the AI had a clear focus.  
 
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
-
+- How did you evaluate or verify what the AI suggested?      
+              
+One suggestion I did not accept was when I was asking the AI to help plan my outline for testing my pawpal_system.py, it suggested a very complex, multi-page suite. It included very long and detailed explanations. I evaluated the response and did not want the README.md file to be overly dense and informal for readers. 
 ---
 
 ## 4. Testing and Verification
@@ -68,12 +71,16 @@ This tradeoff is reasonable because it prioritizes computational efficiency and 
 **a. What you tested**
 
 - What behaviors did you test?
-- Why were these tests important?
+- Why were these tests important?       
+                
+Some behaviors I tested were same time conflict, when two tasks were scheduled at the same time or overlapped. I also tested when a pet has no tasks. These tests were important because they made sure the app was reliable and validate conflict detection so the owner wouldn't be given a confusing schedule. Testing the empty profiles and boundary conditions makes sure the code doesn't crash. 
 
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+- What edge cases would you test next if you had more time?                     
+       
+I am confident the scheduler works because the 5 target scenarios passed testing, and sorting correctness, conflict detection were all validated. Some more edge cases I would test are back to back events, to see if the scheduler would accidentally mark an overlap. I would also test an "anytime" task and how it interacts with conflict logic. 
 
 ---
 
@@ -81,12 +88,18 @@ This tradeoff is reasonable because it prioritizes computational efficiency and 
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+- What part of this project are you most satisfied with?             
+
+I am really satisfied with how the ScheduleManager works, with prioritizing and separating behaviors into User, Pet, and CareEvent. I also really like the chronological sorting of the task wishlist, and generating recurring events. 
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+- If you had another iteration, what would you improve or redesign?               
+        
+I would like to improve the scheduler to handle more edge cases like back to back tasks or exact time limit with exact fit tasks. 
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+- What is one important thing you learned about designing systems or working with AI on this project?     
+
+Something important I learned about designing systems is that the most optimal solutions don't always offer the best user experience. It's important to evaluate and decide, not letting AI decide, whether certain tradeoffs are worth it and make the app more efficient. It's important that we make decisions about the systems and apps we create. 
